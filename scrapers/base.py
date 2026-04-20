@@ -24,6 +24,13 @@ class BaseScraper:
         error: list[Exception] = []
 
         def target():
+            import asyncio, sys
+            # Windows のスレッド内では SelectorEventLoop がデフォルトで
+            # subprocess が使えないため ProactorEventLoop に切り替える
+            if sys.platform == "win32":
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                loop = asyncio.ProactorEventLoop()
+                asyncio.set_event_loop(loop)
             try:
                 result.extend(self.fetch(query, max_pages))
             except Exception as e:
