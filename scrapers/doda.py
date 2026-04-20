@@ -21,7 +21,11 @@ class DodaScraper(BaseScraper):
                     f"https://doda.jp/DodaFront/View/JobSearchList/"
                     f"j_oc__1/-preBtn__1/kwl__{query}/org__1/pn__{page_num}/"
                 )
-                page.goto(url, timeout=30000)
+                try:
+                    page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                except Exception:
+                    # HTTP/2エラー等の通信エラーは無視して取得済みで終了
+                    break
                 page.wait_for_timeout(3000)
                 cards = page.query_selector_all("article")
                 if not cards:
@@ -45,6 +49,6 @@ class DodaScraper(BaseScraper):
                             description=desc,
                             url=href,
                         ))
-                time.sleep(1)
+                time.sleep(3)  # ページ間の待機を長めに
             browser.close()
         return records
