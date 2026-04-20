@@ -5,12 +5,11 @@ from .base import BaseScraper, JobRecord
 
 class DodaScraper(BaseScraper):
     site_name = "Doda"
-    SEARCH_URL = "https://doda.jp/DodaFront/View/JobSearchList/j_oc__1/-preBtn__1/"
 
     def fetch(self, query: str, max_pages: int = 3) -> list[JobRecord]:
         records = []
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(channel="chrome", headless=True)
             ctx = browser.new_context(user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -23,18 +22,18 @@ class DodaScraper(BaseScraper):
                     f"j_oc__1/-preBtn__1/kwl__{query}/org__1/pn__{page_num}/"
                 )
                 page.goto(url, timeout=30000)
-                page.wait_for_timeout(2000)
-                cards = page.query_selector_all("li.unitJob")
+                page.wait_for_timeout(3000)
+                cards = page.query_selector_all("article")
                 if not cards:
                     break
                 for card in cards:
-                    title_el = card.query_selector("p.jobTitle")
-                    company_el = card.query_selector("p.company")
-                    catch_el = card.query_selector("p.catchCopy")
-                    link_el = card.query_selector("a")
+                    title_el = card.query_selector("h2")
+                    link_el = card.query_selector("a[href*='JobSearchDetail']")
+                    company_el = card.query_selector("[class*='company'], [class*='Company']")
+                    desc_el = card.query_selector("p[class*='text'], p[class*='Text']")
                     title = title_el.inner_text().strip() if title_el else ""
                     company = company_el.inner_text().strip() if company_el else ""
-                    desc = catch_el.inner_text().strip() if catch_el else ""
+                    desc = desc_el.inner_text().strip() if desc_el else ""
                     href = link_el.get_attribute("href") if link_el else ""
                     if href and not href.startswith("http"):
                         href = "https://doda.jp" + href

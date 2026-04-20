@@ -1,53 +1,64 @@
 import time
-import httpx
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 from .base import BaseScraper, JobRecord
 
 
 class MeitecNextScraper(BaseScraper):
     site_name = "メイテックネクスト"
-    SEARCH_URL = "https://www.meitec-next.jp/search/?keyword={query}&page={page}"
-    HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        )
-    }
+    SEARCH_URL_P1 = "https://www.m-next.jp/job/s/w{query}/"
+    SEARCH_URL_PN = "https://www.m-next.jp/job/s/w{query}/p{page}/#paging"
 
     def fetch(self, query: str, max_pages: int = 3) -> list[JobRecord]:
         records = []
-        with httpx.Client(headers=self.HEADERS, follow_redirects=True, timeout=20) as client:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(channel="chrome", headless=True)
+            ctx = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="ja-JP",
+            )
+            page = ctx.new_page()
             for page_num in range(1, max_pages + 1):
-                url = self.SEARCH_URL.format(query=query, page=page_num)
-                resp = client.get(url)
-                if resp.status_code != 200:
+                if page_num == 1:
+                    url = self.SEARCH_URL_P1.format(query=query)
+                else:
+                    url = self.SEARCH_URL_PN.format(query=query, page=page_num)
+                page.goto(url, timeout=30000)
+                page.wait_for_timeout(3000)
+
+                # 求人カード: <a href="/job/..."><dl>...</dl></a>
+                cards = page.query_selector_all("a[href*='/job/']")
+                job_cards = [c for c in cards if c.query_selector(".position")]
+                if not job_cards:
                     break
-                soup = BeautifulSoup(resp.text, "lxml")
-                cards = soup.select("div.job-list__item, li.job-item, article.job-card")
-                if not cards:
-                    # フォールバック: 汎用的なリンクタイトル抽出
-                    cards = soup.select("div.search-result-item, div.jobItem")
-                if not cards:
-                    break
-                for card in cards:
-                    title_el = card.select_one("h2, h3, .job-title, .jobTitle")
-                    company_el = card.select_one(".company, .companyName")
-                    skills_el = card.select_one(".skill, .required-skill, .skills, .jobDetail")
-                    link_el = card.select_one("a[href]")
-                    title = title_el.get_text(strip=True) if title_el else ""
-                    company = company_el.get_text(strip=True) if company_el else ""
-                    skills = skills_el.get_text(strip=True) if skills_el else ""
-                    href = link_el["href"] if link_el else ""
-                    if href and not href.startswith("http"):
-                        href = "https://www.meitec-next.jp" + href
+
+                for card in job_cards:
+                    href = card.get_attribute("href") or ""
+                    if not href.startswith("http"):
+                        href = "https://www.m-next.jp" + href
+
+                    title_el = card.query_selector(".position")
+                    company_el = card.query_selector(".img span, .img")
+                    data_el = card.query_selector(".data")
+                    tag_el = card.query_selector(".tag")
+
+                    title = title_el.inner_text().strip() if title_el else ""
+                    company = company_el.inner_text().strip() if company_el else ""
+                    data_text = data_el.inner_text().strip() if data_el else ""
+                    tag_text = tag_el.inner_text().strip() if tag_el else ""
+                    desc = f"{data_text} {tag_text}".strip()
+
                     if title:
                         records.append(JobRecord(
                             site=self.site_name,
                             title=title,
                             company=company,
-                            skills=skills,
+                            description=desc,
                             url=href,
                         ))
                 time.sleep(1)
+            browser.close()
         return records
