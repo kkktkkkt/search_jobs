@@ -58,11 +58,13 @@ if run:
     for i, site_name in enumerate(selected_sites):
         progress.progress((i) / len(selected_sites), text=f"{site_name} から取得中...")
         try:
-            records = SCRAPERS[site_name].fetch(query, max_pages)
+            records = SCRAPERS[site_name].fetch_in_thread(query, max_pages)
             all_records.extend(records)
             site_records[site_name] = records
         except Exception as e:
+            import traceback
             st.warning(f"{site_name}: 取得エラー ({e})")
+            st.code(traceback.format_exc())
             site_records[site_name] = []
     progress.progress(1.0, text="完了!")
 
