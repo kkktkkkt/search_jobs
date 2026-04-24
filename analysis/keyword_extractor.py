@@ -3,12 +3,22 @@ from collections import Counter
 from config import TECH_KEYWORDS
 
 
+def _make_pattern(kw: str) -> str:
+    """
+    キーワードの前後にアルファベットが来ないことを確認するパターンを生成。
+    例: "R" が "React" や "REST" にマッチしないようにする。
+    """
+    return r'(?<![a-zA-Z])' + re.escape(kw) + r'(?![a-zA-Z])'
+
+
+# 起動時にパターンをコンパイルしてキャッシュ
+_PATTERNS = {kw: re.compile(_make_pattern(kw), re.IGNORECASE) for kw in TECH_KEYWORDS}
+
+
 def extract_keywords(text: str) -> list[str]:
     found = []
-    text_lower = text.lower()
-    for kw in TECH_KEYWORDS:
-        pattern = re.escape(kw)
-        if re.search(pattern, text, re.IGNORECASE):
+    for kw, pattern in _PATTERNS.items():
+        if pattern.search(text):
             found.append(kw)
     return found
 

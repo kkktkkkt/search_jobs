@@ -36,6 +36,12 @@ SCRAPERS = {
     "メイテックネクスト": MeitecNextScraper(),
 }
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_fetch(site_name: str, query: str, max_pages: int) -> list[dict]:
+    """結果を1時間キャッシュ。同じ条件なら再スクレイピング不要。"""
+    records = SCRAPERS[site_name].fetch_in_thread(query, max_pages)
+    return [r.__dict__ for r in records]
+
 st.set_page_config(page_title="求人トレンド分析", page_icon="📊", layout="wide")
 st.title("📊 求人トレンドキーワード分析")
 
@@ -50,22 +56,41 @@ with st.sidebar:
     )
     top_n = st.slider("表示するキーワード数 TOP N", 5, 50, 20)
     run = st.button("🔍 取得・分析開始", type="primary")
+    if st.button("🗑️ キャッシュをクリア"):
+        cached_fetch.clear()
+        st.success("キャッシュをクリアしました")
 
 if run:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import traceback
+
     all_records = []
     site_records: dict[str, list] = {}
-    progress = st.progress(0, text="スクレイピング中...")
-    for i, site_name in enumerate(selected_sites):
-        progress.progress((i) / len(selected_sites), text=f"{site_name} から取得中...")
-        try:
-            records = SCRAPERS[site_name].fetch_in_thread(query, max_pages)
-            all_records.extend(records)
-            site_records[site_name] = records
-        except Exception as e:
-            import traceback
-            st.warning(f"{site_name}: 取得エラー ({e})")
-            st.code(traceback.format_exc())
-            site_records[site_name] = []
+    progress = st.progress(0, text="全サイトを並列取得中...")
+    completed_count = 0
+
+    def scrape(site_name: str):
+        dicts = cached_fetch(site_name, query, max_pages)
+        from scrapers.base import JobRecord
+        records = [JobRecord(**d) for d in dicts]
+        return site_name, records
+
+    with ThreadPoolExecutor(max_workers=len(selected_sites)) as executor:
+        futures = {executor.submit(scrape, s): s for s in selected_sites}
+        for future in as_completed(futures):
+            completed_count += 1
+            progress.progress(completed_count / len(selected_sites),
+                              text=f"{completed_count}/{len(selected_sites)} サイト完了...")
+            try:
+                site_name, records = future.result()
+                all_records.extend(records)
+                site_records[site_name] = records
+            except Exception as e:
+                site_name = futures[future]
+                st.warning(f"{site_name}: 取得エラー ({e})")
+                st.code(traceback.format_exc())
+                site_records[site_name] = []
+
     progress.progress(1.0, text="完了!")
 
     if not all_records:

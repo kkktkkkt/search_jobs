@@ -19,21 +19,21 @@ class KyujinBoxScraper(BaseScraper):
                 locale="ja-JP",
             )
             page = ctx.new_page()
-            # トップページからフォーム送信で検索
             page.goto("https://xn--pckua2a7gp15o89zb.com/", timeout=20000)
-            page.wait_for_timeout(1500)
+            # フォームが表示されるまで待つ
+            page.wait_for_selector("input[name='form[keyword]']", timeout=10000)
             page.fill("input[name='form[keyword]']", query)
             page.press("input[name='form[keyword]']", "Enter")
-            page.wait_for_timeout(3000)
+            # 検索結果カードが出るまで待つ
+            page.wait_for_selector(".p-result_card", timeout=15000)
 
             for page_num in range(max_pages):
                 if page_num > 0:
-                    # 次ページへ
                     next_btn = page.query_selector("a[rel='next'], a.c-pagination_next, a[class*='next']")
                     if not next_btn:
                         break
                     next_btn.click()
-                    page.wait_for_timeout(2000)
+                    page.wait_for_selector(".p-result_card", timeout=10000)
 
                 cards = page.query_selector_all(".p-result_card")
                 if not cards:
@@ -58,6 +58,6 @@ class KyujinBoxScraper(BaseScraper):
                             description=desc,
                             url=href,
                         ))
-                time.sleep(1)
+                time.sleep(0.5)
             browser.close()
         return records
