@@ -20,7 +20,6 @@ class IndeedScraper(BaseScraper):
                 viewport={"width": 1280, "height": 800},
                 locale="ja-JP",
             )
-            # automation検知を回避
             ctx.add_init_script(
                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
             )
@@ -29,15 +28,21 @@ class IndeedScraper(BaseScraper):
                 start = page_num * 10
                 url = self.BASE_URL.format(query=query, start=start)
                 page.goto(url, timeout=30000, wait_until="domcontentloaded")
-                page.wait_for_timeout(3000)
 
-                # Blocked ページの検出
                 if "Blocked" in page.title() or "blocked" in page.url:
+                    break
+
+                try:
+                    # 求人カードが出るまで待つ
+                    page.wait_for_selector(
+                        "div.job_seen_beacon, div.jobsearch-SerpJobCard, td.resultContent",
+                        timeout=10000,
+                    )
+                except Exception:
                     break
 
                 cards = page.query_selector_all("div.job_seen_beacon, div.jobsearch-SerpJobCard")
                 if not cards:
-                    # フォールバック: td.resultContent
                     cards = page.query_selector_all("td.resultContent")
                 if not cards:
                     break
@@ -61,6 +66,6 @@ class IndeedScraper(BaseScraper):
                             description=desc,
                             url=href,
                         ))
-                time.sleep(2)
+                time.sleep(1)
             browser.close()
         return records

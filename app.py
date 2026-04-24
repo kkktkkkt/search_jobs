@@ -36,6 +36,12 @@ SCRAPERS = {
     "メイテックネクスト": MeitecNextScraper(),
 }
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_fetch(site_name: str, query: str, max_pages: int) -> list[dict]:
+    """結果を1時間キャッシュ。同じ条件なら再スクレイピング不要。"""
+    records = SCRAPERS[site_name].fetch_in_thread(query, max_pages)
+    return [r.__dict__ for r in records]
+
 st.set_page_config(page_title="求人トレンド分析", page_icon="📊", layout="wide")
 st.title("📊 求人トレンドキーワード分析")
 
@@ -50,6 +56,9 @@ with st.sidebar:
     )
     top_n = st.slider("表示するキーワード数 TOP N", 5, 50, 20)
     run = st.button("🔍 取得・分析開始", type="primary")
+    if st.button("🗑️ キャッシュをクリア"):
+        cached_fetch.clear()
+        st.success("キャッシュをクリアしました")
 
 if run:
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -61,7 +70,10 @@ if run:
     completed_count = 0
 
     def scrape(site_name: str):
-        return site_name, SCRAPERS[site_name].fetch_in_thread(query, max_pages)
+        dicts = cached_fetch(site_name, query, max_pages)
+        from scrapers.base import JobRecord
+        records = [JobRecord(**d) for d in dicts]
+        return site_name, records
 
     with ThreadPoolExecutor(max_workers=len(selected_sites)) as executor:
         futures = {executor.submit(scrape, s): s for s in selected_sites}
