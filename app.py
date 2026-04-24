@@ -52,20 +52,33 @@ with st.sidebar:
     run = st.button("🔍 取得・分析開始", type="primary")
 
 if run:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import traceback
+
     all_records = []
     site_records: dict[str, list] = {}
-    progress = st.progress(0, text="スクレイピング中...")
-    for i, site_name in enumerate(selected_sites):
-        progress.progress((i) / len(selected_sites), text=f"{site_name} から取得中...")
-        try:
-            records = SCRAPERS[site_name].fetch_in_thread(query, max_pages)
-            all_records.extend(records)
-            site_records[site_name] = records
-        except Exception as e:
-            import traceback
-            st.warning(f"{site_name}: 取得エラー ({e})")
-            st.code(traceback.format_exc())
-            site_records[site_name] = []
+    progress = st.progress(0, text="全サイトを並列取得中...")
+    completed_count = 0
+
+    def scrape(site_name: str):
+        return site_name, SCRAPERS[site_name].fetch_in_thread(query, max_pages)
+
+    with ThreadPoolExecutor(max_workers=len(selected_sites)) as executor:
+        futures = {executor.submit(scrape, s): s for s in selected_sites}
+        for future in as_completed(futures):
+            completed_count += 1
+            progress.progress(completed_count / len(selected_sites),
+                              text=f"{completed_count}/{len(selected_sites)} サイト完了...")
+            try:
+                site_name, records = future.result()
+                all_records.extend(records)
+                site_records[site_name] = records
+            except Exception as e:
+                site_name = futures[future]
+                st.warning(f"{site_name}: 取得エラー ({e})")
+                st.code(traceback.format_exc())
+                site_records[site_name] = []
+
     progress.progress(1.0, text="完了!")
 
     if not all_records:
